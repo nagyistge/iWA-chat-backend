@@ -1,0 +1,73 @@
+'use strict';
+
+/**
+ * Populate the request with the note's data received by POST HTTP method and filter the content to
+ * avoid security holes.
+ *
+ * The middleware report an error to the next middleware/action of the chain if the
+ * structure is wrong otherwise populate req.processed.note object, which has the next
+ * attributes:
+ *
+ *
+ *  Pre-Middleware type: frontline
+ *
+ *  Pre conditions:
+ *    # req.body must exist
+ *
+ */
+
+module.exports = exports;
+var settings = require('../../../../settings.js');
+
+/**
+ * Dependencies
+ */
+//Action helpers
+var helperPreMiddlewares = require(settings.ctrlsPath + '/_helpers').middlewares.pre;
+var helperGlobal = require(settings.ctrlsPath + '/_helpers').global;
+
+//System Entities
+var iWAErrors = require(settings.sysPath + '/entities/errors');
+
+//Database (MongoDB)
+var iWAMongo = require(settings.dataSourcesPath + '/iwaMongo');
+var iWANote = require(settings.modelsPath + '/iwazat/note');
+
+// Input validations and sanitizations
+var check = require('validator').check;
+var sanitize = require('validator').sanitize;
+
+module.exports = function(req, res, next) {
+
+  if (helperPreMiddlewares.jumpIfErrors(req, res, next)) {
+    return;
+  }
+
+  var note = req.processed.note;
+
+  // Check variables
+  try {
+    //check(note.status.type, 'Unknown note status').isIn(iWANote.validators.statusesList);
+    check(note.content.title, 'Title contains unaccepted characters').regex(
+        iWANote.validators.titleMatch);
+
+    // TODO check the note attachments
+
+    // TODO check the note metattachments if there are no attachments, empty array must be received
+    if (note.metadata) {
+      check(note.metadata, 'The metadata is not an array').isArray();
+
+      // TODO check if the sent metadata types are supported --> implement a method in validator module      
+      //(iWANote.validaors.metattachmentsList());
+    } 
+    
+    note.content.text = sanitize(note.content.text).entityDecode();
+    note.content.text = sanitize(note.content.text).xss();
+
+  } catch (error) {
+    helperGlobal.addError(req, new iWAErrors.ClientAttack(
+        'Client by-passed the front-end validators of the note creation form // error details: '
+            + error.message, 601, req), 400);  }
+
+  next();
+};

@@ -1,0 +1,92 @@
+module.exports = exports;
+var settings = require('../../../settings.js');
+
+/**
+ * Dependencies
+ */
+//Controller helpers
+var helperGlobal = require(settings.ctrlsPath + '/_helpers').global;
+var helperActions = require(settings.ctrlsPath + '/_helpers').actions;
+
+// Database (MongoDB)
+var iWAMongo = require(settings.dataSourcesPath + '/iwaMongo');
+var uPubPersMeta = require(settings.modelsPath +
+  '/iwazat/_plugins/metattachments').iWazat.userPublicPersona;
+var iWANote = require(settings.modelsPath + '/iwazat/note');
+
+//Input validations and sanitizations
+var screen = require('screener').screen;
+//System Entities
+var iWAErrors = require(settings.sysPath + '/entities/errors');
+
+
+module.exports = function (req, res, next, post) {
+
+  if (helperActions.respAllIssues(req, res, post)) {
+    return;
+  }
+
+  var note = req.processed.note;
+  var errLogMsg;
+  var metattMsg;
+
+  try {
+    errLogMsg = 'Controller: note # Action: newUserPubPersNote | note\'s scope';
+
+    if (!note.scope) {
+      throw new Error(errLogMsg + ' parameter was not sent');
+    }
+
+    if (!Array.isArray(note.scope)) {
+      throw new Error(errLogMsg + ' parameter is not an array');
+    }
+
+    if (note.scope.length !== 1) {
+      throw new Error(errLogMsg + ' | expected only one metattachment in the scope, received: ' +
+        note.scope.length);
+    }
+
+    if (!screen(note.scope[0], uPubPersMeta.metattPattern)) {
+      throw new Error(errLogMsg + ' | unexpected scope metattachment type');
+    }
+
+    metattMsg = note.scope[0];
+    metattMsg = uPubPersMeta.create(metattMsg.data);
+
+  } catch (error) {
+    helperGlobal.addError(req, new iWAErrors.ClientAttack(errLogMsg, 602, req), 602);
+    sendResponse(req, res, next, post);
+    return;
+  }
+
+  if (!note.metadata) {
+    note.metadata = [];
+  }
+
+  note.metadata.push(metattMsg);
+  delete note.scope;
+
+  var Note = iWAMongo.model(iWANote, iWANote.mongooseModelOptions(req.session.user));
+  Note.create(note, function (err, note) {
+    if (err) {
+      helperGlobal.addError(req,
+        new iWAErrors.Db('Controller: note # Action: newUserPubPersNote | Error when creating ' +
+          'the new note, user id public persona to attach: ' + metattMsg.data.user_id, 521, err),
+        521);
+    }
+
+    sendResponse(req, res, next, post);
+  });
+};
+
+function sendResponse(req, res, next, post) {
+
+  // is there errors the helper will send the response
+  if (helperActions.respAllIssues(req, res, post)) {
+    return;
+  }
+
+  res.send(200);
+  post(null, req, res);
+
+}

@@ -1,0 +1,76 @@
+/**
+ * iWazat Event Stream plugin model
+ * 
+ */
+module.exports = exports;
+
+/**
+ * Dependencies
+ */
+var mongoose = require('mongoose');
+var Schema = mongoose.Schema;
+
+/**
+ * Plugin function interface. It changes the collection name and mongoose model name (override or
+ * create the method 'mongooseModelName') appending an underscore and the id of the event and it
+ * attaches a new attribute named 'event' and populate its value with the provided event id and
+ * after saving document operation, it calls the provided function if it is applicable. NOTE that if
+ * the document contains this attribute, its value will be overridden when the document be saved,
+ * and if the schema contains this path but it is not of ObjectId type then it will be overridden as
+ * well; if the collection name it is not set in the schema then the name of the collection will be
+ * 'messages_' plus the event id.
+ * 
+ * @param {Object} schema the instance of the Mongoose Schema to attach the new functionalities
+ * @param {Object} options for setup values and extras to the Schema to attach the plugin. The
+ *          options are: * eventId: the event id whose documents will be related, NOTE that the
+ *          existence of the event will not be checked * [postAction]: optional function to call
+ *          after saving the document, providing as first argument the saved Document message, and
+ *          the second argument it is a function to call if that function finishes without error
+ * @see <a href="https://npmjs.org/package/hooks">hooks</a>
+ */
+function EventStreamPlugin(schema, options) {
+
+  // Check required option parameters
+  if ((!options) || (!options.eventId)) {
+    throw new Error('The event id (eventId) option parameters is required');
+  }
+  
+  var eventAttr = schema.path('event');
+
+  if ((eventAttr === undefined) || (!(eventAttr instanceof Schema.Types.ObjectId))) {
+    schema.path('event', Schema.Types.ObjectId);
+  }
+
+  // Each event have a individual collection to save all the stream messages
+  schema.options.collection = (schema.options.collection) ? schema.options.collection + '_'
+      + options.eventId : 'messages_' + options.eventId;
+
+  var modelName = (schema.mongooseModelName) ? schema.mongooseModelName() + '_' + options.eventId
+      : 'Message_' + options.eventId;
+
+  schema.mongooseModelName = function() {
+    return modelName;
+  };
+
+  schema.pre('save', function(next) {
+    this.event = options.eventId;
+    next();
+  });
+
+  // TODO review this hook, because I tried to do it parallel but I didn't get
+  // it.
+  // Also review the next argument, because it is an integer no a function so,
+  // it doesn't fit with the Hooks module doc @see Hooks
+  // https://github.com/bnoguchi/hooks-js
+  if (options.postAction) {
+    // schema.post('save', true, function(doc, next, done) {
+    schema.post('save', function(doc, next) {
+      // options.postAction(this, done);
+      options.postAction(doc);
+      // next();
+    });
+  }
+
+}
+
+module.exports = EventStreamPlugin;

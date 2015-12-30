@@ -1,0 +1,119 @@
+module.exports = exports;
+var settings = require('../../../settings.js');
+
+/**
+ * Dependencies
+ */
+//Controller helpers
+var helperGlobal = require(settings.ctrlsPath + '/_helpers').global;
+var helperActions = require(settings.ctrlsPath + '/_helpers').actions;
+// Database (MongoDB)
+var iWAMongo = require(settings.dataSourcesPath + '/iwaMongo');
+var TimelineMsgMeta = require(settings.modelsPath +
+  '/iwazat/_plugins/metattachments').iwazat.timelineMessage;
+var iWATimelineMsg = require(settings.modelsPath + '/iwazat/timelineMessage');
+var iWANote = require(settings.modelsPath + '/iwazat/note');
+
+//Input validations and sanitizations
+var screen = require('screener').screen;
+//System Entities
+var iWAErrors = require(settings.sysPath + '/entities/errors');
+
+
+module.exports = function (req, res, next, post) {
+
+  if (helperActions.respAllIssues(req, res, post)) {
+    return;
+  }
+
+  var note = req.processed.note;
+  var metattMsg;
+
+  try {
+    var errLogMsg = 'Controller: note # Action: newMsgTimelineNote | note\'s scope';
+
+    if (!note.scope) throw new Error(errLogMsg + ' parameter was not sent');
+    if (!Array.isArray(note.scope)) throw new Error(errLogMsg + ' parameter is not an array');
+    if (note.scope.length !== 1) {
+      throw new Error(errLogMsg + ' | expected only one metattachment in the scope, received: '
+        + note.scope.length);
+    }
+
+    if (!screen(note.scope[0], TimelineMsgMeta.metattPattern)) {
+      throw new Error(errLogMsg + ' | unexpected scope metattachment type');
+    }
+
+    metattMsg = note.scope[0];
+
+
+    // TODO: Need refactor usign iWaSession service
+    if (!(metattMsg.data.event_id in req.session.events)) {
+      throw new Error(errLogMsg
+        + ' | user modified the event id, because it isn\'t exist in his session');
+    }
+
+    metattMsg = TimelineMsgMeta.create(metattMsg.data);
+
+  } catch (error) {
+    helperGlobal.addError(req, new iWAErrors.ClientAttack(errLogMsg, 602, req), 602);
+    sendResponse(req, res, next, post);
+    return;
+  }
+
+  var MsgTimelineModel = iWAMongo.model(iWATimelineMsg, iWATimelineMsg.mongooseModelOptions({
+    message_collection: metattMsg.data.msg_collection
+  }));
+
+  MsgTimelineModel.findById(metattMsg.data.message_id, {
+    _id: true
+  }, function (err, message) {
+    if (err) {
+      helperGlobal.addError(req,
+        new iWAErrors.Db('Controller: note # Action: newMsgTimelineNote | Error when trying '
+          + 'to get the info of the message id ' + metattMsg.data.message_id
+          + ' from the timeline message collection: ' + metattMsg.data.msgs_collection, 520, err),
+        520);
+      sendResponse(req, res, next, post);
+      return;
+    }
+
+    if (!message) {
+      helperGlobal.addError(req,
+        new iWAErrors.ClientAttack(' user modified the message id or messages collection name, '
+          + 'because the message could not be retrieved from the database', 602, req), 602);
+      sendResponse(req, res, next, post);
+      return;
+    }
+
+    if (!note.metadata) note.metadata = [];
+
+    note.metadata.push(metattMsg);
+    delete note.scope;
+
+    var Note = iWAMongo.model(iWANote, iWANote.mongooseModelOptions(req.session.user));
+    Note.create(note, function (err, note) {
+      if (err) {
+        helperGlobal.addError(req,
+          new iWAErrors.Db('Controller: note # Action: newMsgTimelineNote | Error when creating '
+            + 'the new note, message id ' + metattMsg.data.message_id
+            + ' from the timeline message collection: ' + metattMsg.data.msgs_collection, 521, err),
+          521);
+      }
+
+      sendResponse(req, res, next, post);
+    });
+
+  });
+};
+
+
+function sendResponse(req, res, next, post) {
+
+  // is there errors the helper will send the response
+  if (helperActions.respAllIssues(req, res, post)) {
+    return;
+  }
+
+  res.send(200);
+  post(null, req, res);
+}

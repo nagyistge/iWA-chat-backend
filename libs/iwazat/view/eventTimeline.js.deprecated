@@ -1,0 +1,130 @@
+/**
+ * Service that provides helper functions for managing iWazat messages
+ */
+module.exports = exports;
+
+/**
+ * TODO document
+ * 
+ * 
+ */
+module.exports.iWazatMsgCommentsView = function(iWAMessage, msgOwner, cmtsOwners) {
+
+  var iWAMsgView = this.iWazatMsgView(iWAMessage, msgOwner);
+
+  var cIt;
+  for (cIt = 0; cIt < iWAMessage.comments.length; cIt++) {
+    iWAMsgView.comments.push(this.iWazatCommentView(iWAMessage.comments[cIt], cmtsOwners[cIt]));
+  }
+
+  return iWAMsgView;
+
+};
+
+/**
+ * TODO document
+ */
+module.exports.iWazatMsgView = function(iWAMessage, msgOwner) {
+
+  // TODO remove, only for testing meanwhile the tweets are no populated with an iWazat account
+  if (!msgOwner) {
+    msgOwner = {
+      id : '',
+      persona : {
+        id : '',
+        nickname : 'Twitteator',
+        avatar : '/img/shit.jpg'
+      }
+    };
+  }
+  ///////////////////////////////////*/
+
+  var iWAMsgView = {
+    id : iWAMessage.id,
+    created_at : iWAMessage.created_at,
+    likes : iWAMessage.likes.length,
+    comments : [],
+    owner : {
+      nickname : msgOwner.persona.nickname,
+      avatar : msgOwner.persona.avatar,
+      profileUrl : '/#/user/' + msgOwner.id + '/profile/' + msgOwner.persona.id
+    }
+  };
+
+  var eIt;
+
+// Parse message content
+  switch (iWAMessage.type) {
+    case 'tweet':
+
+      iWAMsgView.owner.profileUrl = 'http://www.twitter.com/' + msgOwner.persona.nickname;
+
+      iWAMsgView.text = iWAMessage.message_object.text;
+
+      if ((iWAMessage.message_object.entities !== undefined)
+          && (iWAMessage.message_object.entities.media !== undefined)
+          && (iWAMessage.message_object.entities.media.length > 0)) {
+
+        iWAMsgView.media = [];
+
+        // TODO The colon after the media URL change the size of using the
+        // twitter specifications
+        // @see Tweet entities https://dev.twitter.com/docs/tweet-entities
+        for (eIt = 0; eIt < iWAMessage.message_object.entities.media.length; eIt++) {
+          iWAMsgView.media.push({
+            // url:
+            // iWAMessage.message_object.entities.media[eIt].media_url,
+            url : iWAMessage.message_object.entities.media[eIt].media_url + ':small',
+            type : iWAMessage.message_object.entities.media[eIt].type
+          });
+        }
+      }
+
+      break;
+    default:
+      iWAMsgView.text = iWAMessage.message_object.text;
+  }
+
+  return iWAMsgView;
+};
+
+/**
+ * TODO document
+ * 
+ * @param {Object} iWAComment - Required
+ * @param {Object} cmtOwner - Required
+ */
+module.exports.iWazatCommentView = function(iWAComment, cmtOwner) {
+
+  var iWACommentView = {
+    id : iWAComment.id,
+    created_at : iWAComment.created_at,
+    text : iWAComment.text,
+    likes : iWAComment.likes.length,
+    owner : {
+      nickname : cmtOwner.persona.nickname,
+      avatar : cmtOwner.persona.avatar,
+      profileUrl : '/#/user/' + cmtOwner.id + '/profile/' + cmtOwner.persona.id
+    }
+  };
+
+  return iWACommentView;
+};
+
+/**
+ * TODO document
+ * 
+ * @param {String} msgOwnerId - Required
+ * @param {Object} iWAComment - Required
+ * @param {Object} cmtOwner - Required
+ */
+module.exports.iWazatRefCommentView = function(msgOwnerId, iWAComment, cmtOwner) {
+
+  var iWARefCmtView = {
+    msgId : msgOwnerId,
+    comment_object : this.iWazatCommentView(iWAComment, cmtOwner)
+  };
+
+  return iWARefCmtView;
+
+};
